@@ -292,7 +292,8 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                     continue;
                 }
 
-                PairedReadSequence prs = pendingByName.remove(rec.getReadName());
+                PairedReadSequence
+                        prs = pendingByName.remove(rec.getReadName());
                 if (prs == null) {
                     // Make a new paired read object and add RG and physical location information to it
                     prs = new PairedReadSequence();
@@ -341,8 +342,11 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
         int groupsProcessed = 0;
         long lastLogTime = System.currentTimeMillis();
         final int meanGroupSize = Math.max(1, (recordsRead / 2) / (int) pow(4, MIN_IDENTICAL_BASES * 2));
+        int countI,countEntry,countLhs,countRhs,countFlags,countIFLNULL,countIFRNULL,countMatch,countTest;
+        countI = countEntry = countLhs = countRhs = countFlags = countIFLNULL = countIFRNULL = countMatch= countTest= 0;
 
         while (iterator.hasNext()) {
+            countI++;
             // Get the next group and split it apart by library
             final List<PairedReadSequence> group = getNextGroup(iterator);
 
@@ -358,6 +362,7 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
 
                 // Now process the reads by library
                 for (final Map.Entry<String, List<PairedReadSequence>> entry : sequencesByLibrary.entrySet()) {
+                    countEntry++;
                     final String library = entry.getKey();
                     final List<PairedReadSequence> seqs = entry.getValue();
 
@@ -372,17 +377,27 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
 
                     // Figure out if any reads within this group are duplicates of one another
                     for (int i = 0; i < seqs.size(); ++i) {
+                        countLhs++;
                         final PairedReadSequence lhs = seqs.get(i);
-                        if (lhs == null) continue;
+                        if (lhs == null){
+                            countIFLNULL++;
+                            continue;}
                         final List<PairedReadSequence> dupes = new ArrayList<PairedReadSequence>();
+                        countTest++;
 
                         for (int j = i + 1; j < seqs.size(); ++j) {
+                            countRhs++;
                             final PairedReadSequence rhs = seqs.get(j);
-                            if (rhs == null) continue;
+                            if (rhs == null) {
+                                countIFRNULL++;
+                                continue;}
+
 
                             if (matches(lhs, rhs, MAX_DIFF_RATE)) {
+                                countMatch++;
                                 dupes.add(rhs);
                                 seqs.set(j, null);
+
                             }
                         }
 
@@ -393,6 +408,7 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
 
                             final boolean[] flags = opticalDuplicateFinder.findOpticalDuplicates(dupes);
                             for (final boolean b : flags) {
+                                countFlags++;
                                 if (b) opticalHisto.increment(duplicateCount);
                             }
                         } else {
@@ -408,6 +424,8 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                 }
             }
         }
+        System.out.println(countI+" "+countEntry+" "+countLhs+" "+countRhs+" "+countFlags+" "
+                +countIFLNULL+" "+countIFRNULL+" "+countMatch+" "+countTest);
 
         iterator.close();
         sorter.cleanup();
@@ -450,6 +468,7 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
         final int read1Length = Math.min(lhs.read1.length, rhs.read1.length);
         final int read2Length = Math.min(lhs.read2.length, rhs.read2.length);
         final int maxErrors = (int) Math.floor((read1Length + read2Length) * maxDiffRate);
+//        final int maxErrors = 0;
         int errors = 0;
 
         // The loop can start from MIN_IDENTICAL_BASES because we've already confirmed that
