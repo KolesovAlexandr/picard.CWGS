@@ -1,9 +1,6 @@
 package picard.analysis;
 
-import htsjdk.samtools.AlignmentBlock;
-import htsjdk.samtools.SAMRecord;
-import htsjdk.samtools.SamReader;
-import htsjdk.samtools.SamReaderFactory;
+import htsjdk.samtools.*;
 import htsjdk.samtools.filter.SamRecordFilter;
 import htsjdk.samtools.filter.SecondaryAlignmentFilter;
 import htsjdk.samtools.metrics.MetricBase;
@@ -163,6 +160,21 @@ public class CollectWgsMetrics extends CommandLineProgram {
         long basesExcludedByBaseq = 0;
         long basesExcludedByOverlap = 0;
         long basesExcludedByCapping = 0;
+        class myRecs extends SamLocusIterator.RecordAndOffset {
+            private boolean flag = false;
+            public myRecs(SAMRecord record, int offset) {
+                super(record, offset);
+            }
+            public  boolean isFlag()
+            {
+                return flag;
+            }
+            public  void isNotFlag()
+            {
+                flag= true;
+            }
+        }
+
 
         // Loop through all the loci
         while (iterator.hasNext()) {
@@ -172,13 +184,28 @@ public class CollectWgsMetrics extends CommandLineProgram {
             final ReferenceSequence ref = refWalker.get(info.getSequenceIndex());
             final byte base = ref.getBases()[info.getPosition() - 1];
             if (base == 'N') continue;
+            byte[] qArray = new byte[1000];
+
 
             // Figure out the coverage while not counting overlapping reads twice, and excluding various things
             final HashSet<String> readNames = new HashSet<String>(info.getRecordAndPositions().size());
             int pileupSize = 0;
             for (final SamLocusIterator.RecordAndOffset recs : info.getRecordAndPositions()) {
+                if (recs.getOffset()==0){
+                    for (int i=0;i<recs.getRecord().getBaseQualities().length;i++){
+                        if (recs.getRecord().getBaseQualities()[i]<MINIMUM_BASE_QUALITY)
+                       qArray[i+info.getPosition()]++ ;
+                    }
 
-                if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY)                   { ++basesExcludedByBaseq;   continue; }
+
+                }
+                if (qArray[info.getPosition()+recs.getOffset()]> 0 ){
+                   basesExcludedByCapping+=qArray[info.getPosition()+recs.getOffset()];continue;
+                }
+
+
+                // if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY)                   { ++basesExcludedByBaseq;   continue; }
+
                 if (!readNames.add(recs.getRecord().getReadName()))                 { ++basesExcludedByOverlap; continue; }
                 pileupSize++;
                 if (pileupSize <= max) {
