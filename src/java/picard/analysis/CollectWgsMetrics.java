@@ -169,16 +169,27 @@ public class CollectWgsMetrics extends CommandLineProgram {
         long basesExcludedByOverlap = 0;
         long basesExcludedByCapping = 0;
 
-        class MyRecs extends SamLocusIterator.RecordAndOffset {
-            private boolean processed = false;
-            public MyRecs(SAMRecord record, int offset) {
-                super(record, offset);
+        class MyClass {
+            private int _count;
+            private byte[] _qualities;
+
+            public int getCount() {
+                return _count;
             }
-            public boolean isProcessed() {
-                return processed;
+
+            public void incrimentCount() {
+                _count++;
             }
-            public void process() {
-                processed = true;
+
+            public byte[] getQualities() {
+                return _qualities;
+            }
+
+            public void setQualities(byte[] qualities, int length) {
+                _qualities = new byte[length];
+                for (int i = 0; i < _qualities.length; i++) {
+                    _qualities[i] = qualities[i];
+                }
             }
         }
 
@@ -186,6 +197,7 @@ public class CollectWgsMetrics extends CommandLineProgram {
         // Loop through all the loci
         int shift = 0;
         byte[] qArray = new byte[ARRAYLENGTH];
+        MyClass[] qArrays = new MyClass[ARRAYLENGTH];
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
 
@@ -195,14 +207,14 @@ public class CollectWgsMetrics extends CommandLineProgram {
             if (base == 'N') continue;
 
 
-
             // Figure out the coverage while not counting overlapping reads twice, and excluding various things
             final HashSet<String> readNames = new HashSet<String>(info.getRecordAndPositions().size());
             int pileupSize = 0;
+
             for (final SamLocusIterator.RecordAndOffset recs : info.getRecordAndPositions()) {
 //                MyRecs recs = (MyRecs) recs2;
 
-                if (recs.getOffset() == 0) {
+                if (!recs.isProcessed()) {
                     final int length = recs.getRecord().getBaseQualities().length;
                     if (length + info.getPosition() >= qArray.length) {
                         if (info.getPosition() < qArray.length) {
@@ -215,13 +227,12 @@ public class CollectWgsMetrics extends CommandLineProgram {
                             shift = info.getPosition();
                         }
                     }
-                    for (int i = 0; i < length; i++) {
+                    for (int i = recs.getOffset(); i < length; i++) {
                         if (recs.getRecord().getBaseQualities()[i] < MINIMUM_BASE_QUALITY) {
-                            qArray[i + info.getPosition() - shift]++;
-                        } else {
-
+                            qArray[i - recs.getOffset() + info.getPosition() - shift]++;
                         }
                     }
+                    recs.process();
                 }
 
                 if (qArray[info.getPosition() + recs.getOffset() - shift] > 0) {
