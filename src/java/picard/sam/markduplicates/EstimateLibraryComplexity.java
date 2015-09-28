@@ -247,7 +247,8 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                 if (retval != 0) return retval;
             }
 
-            return System.identityHashCode(lhs) - System.identityHashCode(rhs);
+//            return System.identityHashCode(lhs) - System.identityHashCode(rhs);
+            return 0;
         }
     }
 
@@ -292,8 +293,7 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                     continue;
                 }
 
-                PairedReadSequence
-                        prs = pendingByName.remove(rec.getReadName());
+                PairedReadSequence prs = pendingByName.remove(rec.getReadName());
                 if (prs == null) {
                     // Make a new paired read object and add RG and physical location information to it
                     prs = new PairedReadSequence();
@@ -342,8 +342,8 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
         int groupsProcessed = 0;
         long lastLogTime = System.currentTimeMillis();
         final int meanGroupSize = Math.max(1, (recordsRead / 2) / (int) pow(4, MIN_IDENTICAL_BASES * 2));
-        int countI,countEntry,countLhs,countRhs,countFlags,countIFLNULL,countIFRNULL,countMatch,countTest;
-        countI = countEntry = countLhs = countRhs = countFlags = countIFLNULL = countIFRNULL = countMatch= countTest= 0;
+        int countI,countEntry,countLhs,countRhs,countFlags,countIFLNULL,countIFRNULL,countMatch,countTest,countDupeL;
+        countI = countEntry = countLhs = countRhs = countFlags = countIFLNULL = countIFRNULL = countMatch= countTest= countDupeL=0;
 
         while (iterator.hasNext()) {
             countI++;
@@ -402,6 +402,7 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                         }
 
                         if (dupes.size() > 0) {
+                            countDupeL++;
                             dupes.add(lhs);
                             final int duplicateCount = dupes.size();
                             duplicationHisto.increment(duplicateCount);
@@ -424,8 +425,12 @@ public class EstimateLibraryComplexity extends AbstractOpticalDuplicateFinderCom
                 }
             }
         }
-        System.out.println(countI+" "+countEntry+" "+countLhs+" "+countRhs+" "+countFlags+" "
-                +countIFLNULL+" "+countIFRNULL+" "+countMatch+" "+countTest);
+        System.out.println("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        System.out.println("countI="+countI+" countEntry="+countEntry+" countLhs="+countLhs+
+                " countIFLNULL=" +countIFLNULL+" countTest="+countTest);
+        System.out.println(" countRhs= "+countRhs+" countIFRNULL="+countIFRNULL+
+                " countMatch="+countMatch+" countDupeL="+countDupeL+" countFlags="+countFlags);
+        System.out.println("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
         iterator.close();
         sorter.cleanup();
