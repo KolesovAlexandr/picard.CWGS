@@ -10,12 +10,16 @@ import htsjdk.samtools.metrics.MetricBase;
 import htsjdk.samtools.metrics.MetricsFile;
 import htsjdk.samtools.reference.ReferenceSequence;
 import htsjdk.samtools.reference.ReferenceSequenceFileWalker;
-import htsjdk.samtools.util.*;
+import htsjdk.samtools.util.Histogram;
+import htsjdk.samtools.util.IOUtil;
+import htsjdk.samtools.util.Log;
+import htsjdk.samtools.util.ProgressLogger;
+import htsjdk.samtools.util.SamLocusIterator;
 import picard.cmdline.CommandLineProgram;
 import picard.cmdline.CommandLineProgramProperties;
 import picard.cmdline.Option;
-import picard.cmdline.programgroups.Metrics;
 import picard.cmdline.StandardOptionDefinitions;
+import picard.cmdline.programgroups.Metrics;
 import picard.util.MathUtil;
 
 import java.io.File;
@@ -36,6 +40,7 @@ import java.util.List;
 )
 public class CollectWgsMetrics extends CommandLineProgram {
 
+    public static final int ARRAYLENGTH = 350;
     @Option(shortName = StandardOptionDefinitions.INPUT_SHORT_NAME, doc = "Input SAM or BAM file.")
     public File INPUT;
 
@@ -60,7 +65,7 @@ public class CollectWgsMetrics extends CommandLineProgram {
     @Option(doc = "Determines whether to include the base quality histogram in the metrics file.")
     public boolean INCLUDE_BQ_HISTOGRAM = false;
 
-    @Option(doc="If true, count unpaired reads, and paired reads with one end unmapped")
+    @Option(doc = "If true, count unpaired reads, and paired reads with one end unmapped")
     public boolean COUNT_UNPAIRED = false;
 
     private final Log log = Log.getInstance(CollectWgsMetrics.class);
@@ -164,7 +169,23 @@ public class CollectWgsMetrics extends CommandLineProgram {
         long basesExcludedByOverlap = 0;
         long basesExcludedByCapping = 0;
 
+        class MyRecs extends SamLocusIterator.RecordAndOffset {
+            private boolean processed = false;
+            public MyRecs(SAMRecord record, int offset) {
+                super(record, offset);
+            }
+            public boolean isProcessed() {
+                return processed;
+            }
+            public void process() {
+                processed = true;
+            }
+        }
+
+
         // Loop through all the loci
+        int shift = 0;
+        byte[] qArray = new byte[ARRAYLENGTH];
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
 
@@ -173,13 +194,48 @@ public class CollectWgsMetrics extends CommandLineProgram {
             final byte base = ref.getBases()[info.getPosition() - 1];
             if (base == 'N') continue;
 
+
+
             // Figure out the coverage while not counting overlapping reads twice, and excluding various things
             final HashSet<String> readNames = new HashSet<String>(info.getRecordAndPositions().size());
             int pileupSize = 0;
             for (final SamLocusIterator.RecordAndOffset recs : info.getRecordAndPositions()) {
+//                MyRecs recs = (MyRecs) recs2;
 
-                if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY)                   { ++basesExcludedByBaseq;   continue; }
-                if (!readNames.add(recs.getRecord().getReadName()))                 { ++basesExcludedByOverlap; continue; }
+                if (recs.getOffset() == 0) {
+                    final int length = recs.getRecord().getBaseQualities().length;
+                    if (length + info.getPosition() >= qArray.length) {
+                        if (info.getPosition() < qArray.length) {
+                            byte[] tmpArray = new byte[ARRAYLENGTH];
+                            System.arraycopy(qArray, info.getPosition(), tmpArray, 0, qArray.length - info.getPosition());
+                            qArray = tmpArray;
+                            shift = info.getPosition();
+                        } else {
+                            qArray = new byte[ARRAYLENGTH];
+                            shift = info.getPosition();
+                        }
+                    }
+                    for (int i = 0; i < length; i++) {
+                        if (recs.getRecord().getBaseQualities()[i] < MINIMUM_BASE_QUALITY) {
+                            qArray[i + info.getPosition() - shift]++;
+                        } else {
+
+                        }
+                    }
+                }
+
+                if (qArray[info.getPosition() + recs.getOffset() - shift] > 0) {
+                    basesExcludedByCapping += qArray[info.getPosition() + recs.getOffset() - shift];
+                    continue;
+                }
+
+
+                // if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY)                   { ++basesExcludedByBaseq;   continue; }
+
+                if (!readNames.add(recs.getRecord().getReadName())) {
+                    ++basesExcludedByOverlap;
+                    continue;
+                }
                 pileupSize++;
                 if (pileupSize <= max) {
                     baseQHistogramArray[recs.getRecord().getBaseQualities()[recs.getOffset()]]++;
@@ -203,7 +259,7 @@ public class CollectWgsMetrics extends CommandLineProgram {
 
         // Construct and write the outputs
         final Histogram<Integer> baseQHisto = new Histogram<Integer>("value", "baseq_count");
-        for (int i=0; i<baseQHistogramArray.length; ++i) {
+        for (int i = 0; i < baseQHistogramArray.length; ++i) {
             baseQHisto.increment(i, baseQHistogramArray[i]);
         }
 
