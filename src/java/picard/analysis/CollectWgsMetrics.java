@@ -170,34 +170,58 @@ public class CollectWgsMetrics extends CommandLineProgram {
         long basesExcludedByCapping = 0;
 
         class MyClass {
-            private int _count;
-            private byte[] _qualities;
+            private int[] _count;
+            private byte[][] _qualities;
+            private int _length;
 
-            public int getCount() {
+            public MyClass(int length) {
+                _count = new int[length];
+                _qualities = new byte[length][];
+                _length = length;
+
+            }
+
+            public int[] getCount() {
                 return _count;
             }
 
-            public void incrimentCount() {
-                _count++;
+            public void incrimentCount(int i) {
+                _count[i]++;
             }
 
-            public byte[] getQualities() {
+            public byte[][] getQualities() {
                 return _qualities;
             }
 
-            public void setQualities(byte[] qualities, int length) {
-                _qualities = new byte[length];
+            public void setQualitiesForOne(int offset, int i, byte value, final int length) {
+                if (_qualities[offset] == null) _qualities[offset] = new byte[length];
+                _qualities[offset][i] = value;
+            }
+
+            public void setQualities(int offset, byte[] qualities, int length) {
+                _qualities[offset] = new byte[length];
                 for (int i = 0; i < _qualities.length; i++) {
-                    _qualities[i] = qualities[i];
+                    _qualities[offset][i] = qualities[i];
                 }
+            }
+
+            public int length() {
+                return _length;
+            }
+
+            public void shiftArray(final int position) {
+                int tmpCount[] = new int[_length];
+                byte[][] tmpQuality = new byte[_length][];
+                System.arraycopy(_count, position, tmpCount, 0, _length - position);
+                System.arraycopy(_qualities, position, tmpQuality, 0, _length - position);
+                _count = tmpCount;
+                _qualities = tmpQuality;
             }
         }
 
-
-        // Loop through all the loci
         int shift = 0;
-        byte[] qArray = new byte[ARRAYLENGTH];
-        MyClass[] qArrays = new MyClass[ARRAYLENGTH];
+        MyClass qArrays = new MyClass(ARRAYLENGTH);
+        // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
 
@@ -212,36 +236,36 @@ public class CollectWgsMetrics extends CommandLineProgram {
             int pileupSize = 0;
 
             for (final SamLocusIterator.RecordAndOffset recs : info.getRecordAndPositions()) {
-//                MyRecs recs = (MyRecs) recs2;
 
                 if (!recs.isProcessed()) {
+
                     final int length = recs.getRecord().getBaseQualities().length;
-                    if (length + info.getPosition() >= qArray.length) {
-                        if (info.getPosition() < qArray.length) {
-                            byte[] tmpArray = new byte[ARRAYLENGTH];
-                            System.arraycopy(qArray, info.getPosition(), tmpArray, 0, qArray.length - info.getPosition());
-                            qArray = tmpArray;
+                    if (length + info.getPosition() >= qArrays.length()) {
+                        if (info.getPosition() < qArrays.length()) {
+                            qArrays.shiftArray(info.getPosition());
                             shift = info.getPosition();
                         } else {
-                            qArray = new byte[ARRAYLENGTH];
+                            qArrays = new MyClass(ARRAYLENGTH);
                             shift = info.getPosition();
                         }
                     }
+
                     for (int i = recs.getOffset(); i < length; i++) {
-                        if (recs.getRecord().getBaseQualities()[i] < MINIMUM_BASE_QUALITY) {
-                            qArray[i - recs.getOffset() + info.getPosition() - shift]++;
+                        final byte quality = recs.getRecord().getBaseQualities()[i];
+                        if (quality < MINIMUM_BASE_QUALITY) {
+                            qArrays.incrimentCount(i - recs.getOffset() + info.getPosition() - shift);
+                        } else {
+                            qArrays.setQualitiesForOne(info.getPosition() - shift, i, quality, length);
                         }
                     }
                     recs.process();
                 }
 
-                if (qArray[info.getPosition() + recs.getOffset() - shift] > 0) {
-                    basesExcludedByCapping += qArray[info.getPosition() + recs.getOffset() - shift];
+                if (qArrays.getCount()[info.getPosition() + recs.getOffset() - shift] > 0) {
+                    basesExcludedByCapping += qArrays.getCount()[info.getPosition() + recs.getOffset() - shift];
                     continue;
                 }
 
-
-                // if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY)                   { ++basesExcludedByBaseq;   continue; }
 
                 if (!readNames.add(recs.getRecord().getReadName())) {
                     ++basesExcludedByOverlap;
@@ -249,7 +273,9 @@ public class CollectWgsMetrics extends CommandLineProgram {
                 }
                 pileupSize++;
                 if (pileupSize <= max) {
-                    baseQHistogramArray[recs.getRecord().getBaseQualities()[recs.getOffset()]]++;
+                    if (qArrays.getQualities()[info.getPosition() - shift] != null) {
+                        baseQHistogramArray[qArrays.getQualities()[info.getPosition() - shift][recs.getOffset()]]++;
+                    }
                 }
             }
 
